@@ -52,6 +52,8 @@ RUN DATABASE_URL=postgres://postgres@example.com:5432/fake_db \
 
 RUN bundle config without development:test && bundle clean
 
+ENTRYPOINT [ "/usr/src/bin/dev-entrypoint.sh" ]
+
 # Stage 5: Release =============================================================
 FROM runtime AS release
 
