@@ -57,6 +57,7 @@ services:
   frontend_test: &frontend_app
     build:
       context: ./frontend
+      target: development
     volumes:
       # Mount the frontend code directory into the container's "/usr/src" folder:
       - ./frontend:/usr/src

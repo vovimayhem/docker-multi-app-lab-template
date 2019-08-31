@@ -1,4 +1,5 @@
-FROM node:dubnium-alpine
+# Stage 1: Runtime =============================================================
+FROM node:dubnium-alpine AS runtime
 
 # Paso 2: Definimos a la locación del proyecto como directorio de trabajo:
 WORKDIR /usr/src
@@ -11,6 +12,9 @@ ENV HOME=/usr/src PATH=/usr/src/bin:$PATH
 # desarrollo, debe estar presente en la imagen de 'release' para hacer staging
 # local:
 RUN apk add --no-cache socat
+
+# Stage 2: Development =========================================================
+FROM runtime AS development
 
 # Paso 6: Instalamos dependencias de desarrollo con el package manager de
 # Alpine:
@@ -33,3 +37,32 @@ RUN npm install -g ember-cli -g check-dependencies
 
 # Paso 11: Definimos el comando default del contenedor:
 CMD ["ember", "server", "--live-reload-port", "35730"]
+
+# Stage 3: Testing =============================================================
+FROM development AS testing
+
+COPY package.json yarn.lock /usr/src/
+
+RUN yarn install
+
+COPY . /usr/src
+
+RUN ember build --environment=test
+
+# Stage 4: Builder =============================================================
+FROM testing AS builder
+
+RUN ember build --environment=production
+
+RUN yarn install --production
+
+# Stage 5: Release =============================================================
+FROM runtime AS release
+
+COPY --from=builder /usr/src/node_modules /usr/src/node_modules
+
+COPY --from=builder /usr/src/dist /usr/src/dist
+
+COPY --from=builder /usr/src/fastboot-server.js /usr/src/reconfigure-app.js /usr/src/
+
+CMD [ "node", "fastboot-server-js" ]
