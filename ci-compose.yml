@@ -1,0 +1,100 @@
+# This file is an override to the default 'docker-compose.yml' file, and is
+# intended to be used in CI contexts (drone, github actions, semaphore, etc).
+#
+# The most important thing it does is re-uses the services defined in the main
+# file (docker-compose.yml) such as postgres, redis, goaws, etc.
+#
+# To make it work, be sure you use an alias for docker-compose called
+# `ci-compose`. You can create one like this:
+# `alias ci-compose="docker-compose --file docker-compose.yml --file ci-compose.yml"`
+version: '3.7'
+
+services:
+  backend_builder:
+    image: vovimayhem/ember-fastboot-demo-backend:builder-${GIT_SHORT_SHA:-latest}
+    build: &backend_ci_build
+      context: backend
+      target: builder
+      cache_from:
+        # Since docker-compose will try to build the unused (at this time)
+        # runtime stage, and this project's dev stages and runtime stages start
+        # from different images, we need to include the releaseable image here
+        # as well - this may change with Docker 19.x:
+        - vovimayhem/ember-fastboot-demo-backend:builder-${GIT_SHORT_SHA:-latest}
+        - vovimayhem/ember-fastboot-demo-backend:builder-${TAG_SAFE_BRANCH}
+        - vovimayhem/ember-fastboot-demo-backend:testing-${GIT_SHORT_SHA:-latest}
+        - vovimayhem/ember-fastboot-demo-backend:testing-${TAG_SAFE_BRANCH}
+        - vovimayhem/ember-fastboot-demo-backend:builder
+        - vovimayhem/ember-fastboot-demo-backend:testing
+
+  backend_release:
+    image: vovimayhem/ember-fastboot-demo-backend:${GIT_SHORT_SHA:-latest}
+    build:
+      <<: *backend_ci_build
+      target: release
+      args:
+        SOURCE_BRANCH: ${GIT_BRANCH}
+        SOURCE_COMMIT: ${GIT_SHA}
+        BUILD_DATE: ${BUILD_DATE}
+        IMAGE_NAME: "icalialabs/backend"
+
+  backend_test:
+    image: vovimayhem/ember-fastboot-demo-backend:testing-${GIT_SHORT_SHA:-latest}
+    build:
+      <<: *backend_ci_build
+      target: testing
+      cache_from:
+        - vovimayhem/ember-fastboot-demo-backend:testing-${GIT_SHORT_SHA:-latest} # The resulting image must also be on cache_from!
+        - vovimayhem/ember-fastboot-demo-backend:testing-${TAG_SAFE_BRANCH}
+        - vovimayhem/ember-fastboot-demo-backend:testing
+    depends_on: [ "postgres" ]
+    command: rspec
+    environment:
+      DATABASE_URL: postgres://postgres:3x4mpl3P455w0rd@postgres:5432/demo_test
+      RAILS_ENV: test
+      RACK_ENV: test
+
+  frontend_builder:
+    image: vovimayhem/ember-fastboot-demo-frontend:builder-${GIT_SHORT_SHA:-latest}
+    build: &frontend_ci_build
+      context: frontend
+      target: builder
+      cache_from:
+        # Since docker-compose will try to build the unused (at this time)
+        # runtime stage, and this project's dev stages and runtime stages start
+        # from different images, we need to include the releaseable image here
+        # as well - this may change with Docker 19.x:
+        - vovimayhem/ember-fastboot-demo-frontend:builder-${GIT_SHORT_SHA:-latest}
+        - vovimayhem/ember-fastboot-demo-frontend:builder-${TAG_SAFE_BRANCH}
+        - vovimayhem/ember-fastboot-demo-frontend:testing-${GIT_SHORT_SHA:-latest}
+        - vovimayhem/ember-fastboot-demo-frontend:testing-${TAG_SAFE_BRANCH}
+        - vovimayhem/ember-fastboot-demo-frontend:builder
+        - vovimayhem/ember-fastboot-demo-frontend:testing
+
+  frontend_release:
+    image: vovimayhem/ember-fastboot-demo-frontend:${GIT_SHORT_SHA:-latest}
+    build:
+      <<: *frontend_ci_build
+      target: release
+      args:
+        SOURCE_BRANCH: ${GIT_BRANCH}
+        SOURCE_COMMIT: ${GIT_SHA}
+        BUILD_DATE: ${BUILD_DATE}
+        IMAGE_NAME: "icalialabs/frontend"
+
+  frontend_test:
+    image: vovimayhem/ember-fastboot-demo-frontend:testing-${GIT_SHORT_SHA:-latest}
+    build:
+      <<: *frontend_ci_build
+      target: testing
+      cache_from:
+        - vovimayhem/ember-fastboot-demo-frontend:testing-${GIT_SHORT_SHA:-latest} # The resulting image must also be on cache_from!
+        - vovimayhem/ember-fastboot-demo-frontend:testing-${TAG_SAFE_BRANCH}
+        - vovimayhem/ember-fastboot-demo-frontend:testing
+    command: rspec
+    environment:
+      CI: 'true'
+      DATABASE_URL: postgres://postgres:3x4mpl3P455w0rd@postgres:5432/frontend_test
+      RAILS_ENV: test
+      RACK_ENV: test
+      RAILS_LOG_TO_STDOUT: 'true'

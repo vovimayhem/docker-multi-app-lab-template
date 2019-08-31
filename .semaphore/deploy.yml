@@ -1,0 +1,75 @@
+version: v1.0
+name: Deploy Pipeline
+agent:
+  machine:
+    type: e1-standard-2
+    os_image: ubuntu1804
+
+blocks:
+  - name: Production Deploy
+    task:
+      secrets:
+        - name: AWS
+      prologue:
+        commands:
+          - checkout
+
+          # Fix the cert permissions to connect to swarm:
+          - chmod 0600 /home/semaphore/.ssh/icalia-swarm.pem
+
+          # Add the scripts for CI to the PATH:
+          - export PATH=$(pwd)/.semaphore/bin:${PATH}
+
+          # Generate the dotenv file into the root folder:
+          - generate-dotenv-file > .env
+
+          # Load the dotenv file so variables are available on pipeline commands:
+          - source .env
+
+          # Log in to AWS ECR:
+          - $(aws ecr get-login --no-include-email --region eu-central-1)
+
+          # Create a tunnel to the swarm host:
+          - ssh -i /home/semaphore/.ssh/icalia-swarm.pem -o StrictHostKeyChecking=no -NL localhost:2374:/var/run/docker.sock "docker@${ICALIA_SWARM_MANAGER_HOST}" &
+
+          # Wait until the tunnel is ready:
+          - while ! nc -z localhost 2374; do sleep 0.1; done
+
+          # Test the tunnel to the swarm host:
+          - DOCKER_HOST="localhost:2374" docker info > /dev/null
+
+          # Create the sentry CLI alias:
+          - alias sentry-cli="docker run --env SENTRY_AUTH_TOKEN=${SENTRY_AUTH_TOKEN} --env SENTRY_URL=${SENTRY_URL} --rm -ti -v $(pwd):/work getsentry/sentry-cli"
+      jobs:
+        - name: Artanis
+          commands:
+            # Start tracking the release on Sentry:
+            - sentry-cli releases --org icalialabs new -p artanis artanis-${GIT_SHORT_SHA}
+
+            # Interpolate the env vars dumped to /.env into the stack file:
+            - docker-compose --file artanis/stack.yml config > artanis.yml
+
+            # Run the deployment:
+            - DOCKER_HOST="localhost:2374" docker stack deploy --with-registry-auth --compose-file artanis.yml artanis
+
+            # Finish the release tracking config:
+            - sentry-cli releases --org icalialabs new --finalize -p artanis artanis-${GIT_SHORT_SHA}
+
+        - name: Candor
+          commands:
+            - sentry-cli releases --org icalialabs new -p candor candor-${GIT_SHORT_SHA}
+            - docker-compose --file candor/swarm-compose.yml config > candor.yml
+            - DOCKER_HOST="localhost:2374" docker stack deploy --with-registry-auth --compose-file candor.yml candor
+            - sentry-cli releases --org icalialabs new --finalize -p candor candor-${GIT_SHORT_SHA}
+
+        - name: Cthulhu
+          commands:
+            - sentry-cli releases --org icalialabs new -p cthulhu cthulhu-${GIT_SHORT_SHA}
+            - docker-compose --file cthulhu/stack.yml config > cthulhu.yml
+            - DOCKER_HOST="localhost:2374" docker stack deploy --with-registry-auth --compose-file cthulhu.yml cthulhu
+            - sentry-cli releases --org icalialabs new --finalize -p cthulhu cthulhu-${GIT_SHORT_SHA}
+
+        - name: Foresight
+          commands:
+            - docker-compose --file web-ui/stack.yml config > foresight.yml
+            - DOCKER_HOST="localhost:2374" docker stack deploy --with-registry-auth --compose-file foresight.yml foresight

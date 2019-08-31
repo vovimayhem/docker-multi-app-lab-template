@@ -1,0 +1,162 @@
+version: v1.0
+
+name: 'Main Pipeline'
+
+agent:
+  machine:
+    type: e1-standard-2
+    os_image: ubuntu1804
+
+blocks:
+  - name: Build Test Images
+    dependencies: []
+    task:
+      secrets:
+        - name: AWS
+      prologue:
+        commands:
+          - checkout
+
+          # Add the scripts for CI to the PATH:
+          - export PATH=$(pwd)/.semaphore/bin:${PATH}
+
+          # Generate the dotenv file:
+          - generate-dotenv-file > .env
+
+          # Merge the compose files:
+          - docker-compose --file docker-compose.yml --file ci-compose.yml config > semaphore-compose.yml
+
+          # Alias docker-compose commands as 'ci-compose':
+          - alias ci-compose="docker-compose --file semaphore-compose.yml"
+
+          # Log in to AWS ECR:
+          - $(aws ecr get-login --no-include-email --region eu-central-1)
+      jobs:
+        - name: Backend
+          commands:
+          # Pull the images referenced in the 'cache_from' key:
+          - docker-image-manager download-cache backend_test
+
+          # Build the test image:
+          - ci-compose build --pull backend_test
+
+          # Tag & Push test image so we can use it on image cache:
+          - docker-image-manager tag-and-push backend_test
+
+        - name: Frontend
+          commands:
+          - docker-image-manager download-cache frontend_test
+          - ci-compose build --pull frontend_test
+          - docker-image-manager tag-and-push frontend_test
+
+  - name: Backend Tests
+    dependencies: [ "Build Test Images" ]
+    task:
+      secrets:
+        - name: AWS
+      prologue:
+        commands:
+          - checkout
+
+          # Add the scripts for CI to the PATH:
+          - export PATH=$(pwd)/.semaphore/bin:${PATH}
+
+          # Generate the dotenv file:
+          - generate-dotenv-file > .env
+
+          # Merge the compose files:
+          - docker-compose --file docker-compose.yml --file ci-compose.yml config > semaphore-compose.yml
+
+          # Alias docker-compose commands as 'ci-compose':
+          - alias ci-compose="docker-compose --file semaphore-compose.yml"
+
+          # Log in to AWS ECR:
+          - $(aws ecr get-login --no-include-email --region eu-central-1)
+      jobs:
+        - name: RSpec
+          commands:
+            # Pull the images referenced in the 'cache_from' key:
+            - docker-image-manager download-cache backend_test
+
+            # Build the test image:
+            - ci-compose build --pull backend_test
+
+            # Wait until postgres is ready:
+            - ci-compose run backend_test dockerize -wait tcp://postgres:5432 -timeout 30s
+
+            # Run the tests
+            - ci-compose run backend_test
+        - name: Build Release
+          commands:
+          # Prepare the release builder (build the builder!):
+          - docker-image-manager download-cache backend_builder
+          - ci-compose build --pull backend_builder
+          - docker-image-manager tag-and-push backend_builder
+
+          # The builder image should be already present.
+          - ci-compose build --pull backend_release
+          - docker-image-manager tag-and-push backend_release
+
+  - name: Frontend Tests
+    dependencies: [ "Build Test Images" ]
+    task:
+      secrets:
+        - name: AWS
+      prologue:
+        commands:
+          - checkout
+
+          # Add the scripts for CI to the PATH:
+          - export PATH=$(pwd)/.semaphore/bin:${PATH}
+
+          # Generate the dotenv file:
+          - generate-dotenv-file > .env
+
+          # Merge the compose files:
+          - docker-compose --file docker-compose.yml --file ci-compose.yml config > semaphore-compose.yml
+
+          # Alias docker-compose commands as 'ci-compose':
+          - alias ci-compose="docker-compose --file semaphore-compose.yml"
+
+          # Log in to AWS ECR:
+          - $(aws ecr get-login --no-include-email --region eu-central-1)
+      jobs:
+        - name: Ember
+          commands:
+            # Pull the images referenced in the 'cache_from' key:
+            - docker-image-manager download-cache frontend_test
+
+            # Build the test image:
+            - ci-compose build --pull frontend_test
+
+            # Run the tests
+            - ci-compose run frontend_test
+        - name: Build Release
+          commands:
+          # Prepare the release builder (build the builder!):
+          - docker-image-manager download-cache frontend_builder
+          - ci-compose build --pull frontend_builder
+          - docker-image-manager tag-and-push frontend_builder
+
+          # The builder image should be already present.
+          - ci-compose build --pull frontend_release
+          - docker-image-manager tag-and-push frontend_release
+
+  - name: End-to-End Tests
+    dependencies:
+      - "Backend Tests"
+      - "Frontend Tests"
+    task:
+      jobs:
+        # This is just a placeholder we'll have for now:
+        - name: E2E Tests
+          commands:
+            - echo "OK"
+
+# promotions:
+#   - name: Deploy
+#     pipeline_file: deploy.yml
+#     auto_promote_on:
+#       - result: passed
+#         branch:
+#           - master
