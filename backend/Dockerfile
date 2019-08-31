@@ -23,6 +23,11 @@ RUN apk add --no-cache \
   git \
   postgresql-dev
 
+RUN export DOCKERIZE_VERSION=0.6.1 \
+ && wget https://github.com/jwilder/dockerize/releases/download/v0.6.1/dockerize-linux-amd64-v${DOCKERIZE_VERSION}.tar.gz \
+ && tar -C /usr/local/bin -xzvf dockerize-linux-amd64-v${DOCKERIZE_VERSION}.tar.gz \
+ && rm dockerize-linux-amd64-v${DOCKERIZE_VERSION}.tar.gz
+
 # Step 7: Copy the project's Gemfile:
 COPY Gemfile* /usr/src/
 
