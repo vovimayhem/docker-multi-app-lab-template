@@ -7,6 +7,7 @@ services:
   backend_test: &backend_app
     build:
       context: ./backend
+      target: development
     entrypoint: /usr/src/bin/dev-entrypoint.sh
     volumes:
       # Mount the backend app code directory ("./backend") into the app
