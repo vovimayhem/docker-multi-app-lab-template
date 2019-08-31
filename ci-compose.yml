@@ -91,7 +91,7 @@ services:
         - vovimayhem/ember-fastboot-demo-frontend:testing-${GIT_SHORT_SHA:-latest} # The resulting image must also be on cache_from!
         - vovimayhem/ember-fastboot-demo-frontend:testing-${TAG_SAFE_BRANCH}
         - vovimayhem/ember-fastboot-demo-frontend:testing
-    command: rspec
+    command: ember test --path /usr/src/dist --launch chromium
     environment:
       CI: 'true'
       DATABASE_URL: postgres://postgres:3x4mpl3P455w0rd@postgres:5432/frontend_test
