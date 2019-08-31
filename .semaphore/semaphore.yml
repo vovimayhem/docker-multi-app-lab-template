@@ -12,7 +12,7 @@ blocks:
     dependencies: []
     task:
       secrets:
-        - name: AWS
+        - name: vov-docker-hub
       prologue:
         commands:
           - checkout
@@ -29,8 +29,8 @@ blocks:
           # Alias docker-compose commands as 'ci-compose':
           - alias ci-compose="docker-compose --file semaphore-compose.yml"
 
-          # Log in to AWS ECR:
-          - $(aws ecr get-login --no-include-email --region eu-central-1)
+          # Authenticate to the registry for all jobs in the block:
+          - echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
       jobs:
         - name: Backend
           commands:
@@ -53,7 +53,7 @@ blocks:
     dependencies: [ "Build Test Images" ]
     task:
       secrets:
-        - name: AWS
+        - name: vov-docker-hub
       prologue:
         commands:
           - checkout
@@ -70,8 +70,8 @@ blocks:
           # Alias docker-compose commands as 'ci-compose':
           - alias ci-compose="docker-compose --file semaphore-compose.yml"
 
-          # Log in to AWS ECR:
-          - $(aws ecr get-login --no-include-email --region eu-central-1)
+          # Authenticate to the registry for all jobs in the block:
+          - echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
       jobs:
         - name: RSpec
           commands:
@@ -101,7 +101,7 @@ blocks:
     dependencies: [ "Build Test Images" ]
     task:
       secrets:
-        - name: AWS
+        - name: vov-docker-hub
       prologue:
         commands:
           - checkout
@@ -118,8 +118,8 @@ blocks:
           # Alias docker-compose commands as 'ci-compose':
           - alias ci-compose="docker-compose --file semaphore-compose.yml"
 
-          # Log in to AWS ECR:
-          - $(aws ecr get-login --no-include-email --region eu-central-1)
+          # Authenticate to the registry for all jobs in the block:
+          - echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
       jobs:
         - name: Ember
           commands:

@@ -1,0 +1,83 @@
+version: '3.7'
+
+volumes:
+  frontend_node_modules:
+
+services:
+  backend_test: &backend_app
+    build:
+      context: ./backend
+    entrypoint: /usr/src/bin/dev-entrypoint.sh
+    volumes:
+      # Mount the backend app code directory ("./backend") into the app
+      # containers at the "/usr/src" folder:
+      - type: bind
+        source: ./backend
+        target: /usr/src
+
+    # Keep the stdin open, so we can attach to our app container's process
+    # and do things such as byebug, etc:
+    stdin_open: true
+
+    # Enable sending signals (CTRL+C, CTRL+P + CTRL+Q) into the container:
+    tty: true
+
+    depends_on:
+      - postgres
+
+    command: rspec
+
+    environment: &backend_app_env
+      # URL to connect to the database:
+      DATABASE_URL: postgres://postgres:3x4mpl3P455w0rd@postgres:5432/demo_test
+      RAILS_ENV: test
+      RACK_ENV: test
+      RAILS_LOG_TO_STDOUT: "true"
+
+  backend_web:
+    <<: *backend_app
+    command: rails server -p 3000 -b 0.0.0.0
+    ports:
+      - ${DEMO_BACKEND_WEB_PORT:-3000}:3000
+    environment:
+      <<: *backend_app_env
+      # Override the URL for the development database - we'll use oauth_provider_development:
+      DATABASE_URL: postgres://postgres:3x4mpl3P455w0rd@postgres:5432/demo_development
+      RAILS_ENV: development
+      RACK_ENV: development
+      # Only used when running 'rails db:setup' or 'rails db:seed' for the first
+      # time:
+      DEMO_FRONTEND_AUTH_CALLBACKS: | # Starts a multiline value:
+        http://${DEMO_FRONTEND_WEB_HOST:-localhost}:${DEMO_FRONTEND_WEB_PORT:-4200}/auth/demo/callback
+        http://${DEMO_FRONTEND_WEB_STAGING_HOST:-localhost}:${DEMO_FRONTEND_WEB_STAGING_PORT:-4201}/auth/demo/callback
+
+  # ============================================================================
+  # Containers / Services for the Frontend App:
+  frontend_test: &frontend_app
+    build:
+      context: ./frontend
+    volumes:
+      # Mount the frontend code directory into the container's "/usr/src" folder:
+      - ./frontend:/usr/src
+      # Replace the mounted node modules folder with a volume:
+      - frontend_node_modules:/usr/src/node_modules
+    entrypoint: /usr/src/bin/dev-entrypoint
+    command: ember test
+    ports:
+      - ${DEMO_FRONTEND_TEST_PORT:-7357}:7357
+    environment: &frontend_env
+      DEMO_BACKEND_URL: ${DEMO_BACKEND_URL:-http://localhost:3000}
+
+      # Makes test suite use chromium instead of chrome inside this container:
+      CI: "true"
+
+  frontend_web:
+    <<: *frontend_app
+    command: ember server --live-reload-port 35730
+    ports:
+      - ${DEMO_FRONTEND_WEB_PORT:-4200}:4200
+      - ${DEMO_FRONTEND_LIVE_RELOAD_PORT:-35730}:35730
+    depends_on:
+      - backend_web
+    stdin_open: true
+    tty: true
