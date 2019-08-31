@@ -84,6 +84,8 @@ blocks:
             # Wait until postgres is ready:
             - ci-compose run backend_test dockerize -wait tcp://postgres:5432 -timeout 30s
 
+            - ci-compose run backend_test rails db:setup
+
             # Run the tests
             - ci-compose run backend_test
         - name: Build Release
