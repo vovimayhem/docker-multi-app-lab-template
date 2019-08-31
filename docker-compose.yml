@@ -52,8 +52,6 @@ services:
 
   backend_web:
     <<: *backend_app
-    labels:
-      com.icalialabs.plis.group: demo backend
     command: rails server -p 3000 -b 0.0.0.0
     ports:
       - ${DEMO_BACKEND_WEB_PORT:-3000}:3000
@@ -72,7 +70,7 @@ services:
   # ============================================================================
   # Containers / Services for the Frontend App:
   frontend_test: &frontend_app
-    build: &frontend_app_build
+    build:
       context: ./frontend
     volumes:
       # Mount the frontend code directory into the container's "/usr/src" folder:
@@ -80,7 +78,7 @@ services:
       # Replace the mounted node modules folder with a volume:
       - frontend_node_modules:/usr/src/node_modules
     entrypoint: /usr/src/bin/dev-entrypoint
-    command: ember test --server
+    command: ember test
     ports:
       - ${DEMO_FRONTEND_TEST_PORT:-7357}:7357
     environment: &frontend_env
