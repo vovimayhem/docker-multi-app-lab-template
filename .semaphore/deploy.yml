@@ -1,3 +1,4 @@
+# .semaphore/production-deploy.yml
 version: v1.0
 name: Deploy Pipeline
 agent:
@@ -6,70 +7,56 @@ agent:
     os_image: ubuntu1804
 
 blocks:
-  - name: Production Deploy
+  - name: Deploy
     task:
       secrets:
-        - name: AWS
+        - name: vov-docker-hub
+        - name: HEROKU
       prologue:
         commands:
-          - checkout
+          # Get the short SHA:
+          - export GIT_SHORT_SHA=${SEMAPHORE_GIT_SHA:0:7}
 
-          # Fix the cert permissions to connect to swarm:
-          - chmod 0600 /home/semaphore/.ssh/icalia-swarm.pem
+          # Authenticate to the registry for all jobs in the block:
+          - echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
 
-          # Add the scripts for CI to the PATH:
-          - export PATH=$(pwd)/.semaphore/bin:${PATH}
-
-          # Generate the dotenv file into the root folder:
-          - generate-dotenv-file > .env
-
-          # Load the dotenv file so variables are available on pipeline commands:
-          - source .env
-
-          # Log in to AWS ECR:
-          - $(aws ecr get-login --no-include-email --region eu-central-1)
-
-          # Create a tunnel to the swarm host:
-          - ssh -i /home/semaphore/.ssh/icalia-swarm.pem -o StrictHostKeyChecking=no -NL localhost:2374:/var/run/docker.sock "docker@${ICALIA_SWARM_MANAGER_HOST}" &
-
-          # Wait until the tunnel is ready:
-          - while ! nc -z localhost 2374; do sleep 0.1; done
-
-          # Test the tunnel to the swarm host:
-          - DOCKER_HOST="localhost:2374" docker info > /dev/null
-
-          # Create the sentry CLI alias:
-          - alias sentry-cli="docker run --env SENTRY_AUTH_TOKEN=${SENTRY_AUTH_TOKEN} --env SENTRY_URL=${SENTRY_URL} --rm -ti -v $(pwd):/work getsentry/sentry-cli"
+          # Log in to the Heroku Container Registry:
+          - heroku container:login
       jobs:
-        - name: Artanis
+        - name: Backend
           commands:
-            # Start tracking the release on Sentry:
-            - sentry-cli releases --org icalialabs new -p artanis artanis-${GIT_SHORT_SHA}
+            - export RELEASE_IMAGE_TAG=vovimayhem/ember-fastboot-demo-backend:${GIT_SHORT_SHA}
 
-            # Interpolate the env vars dumped to /.env into the stack file:
-            - docker-compose --file artanis/stack.yml config > artanis.yml
+            - docker pull ${RELEASE_IMAGE_TAG}
 
-            # Run the deployment:
-            - DOCKER_HOST="localhost:2374" docker stack deploy --with-registry-auth --compose-file artanis.yml artanis
+            - mkdir -p backend && cd backend
+            
+            # Generate the 'web' Dockerfile:
+            - echo "FROM ${RELEASE_IMAGE_TAG}" >> Dockerfile.web
+            
+            # Generate the 'release' Dockerfile:
+            - echo "FROM ${RELEASE_IMAGE_TAG}" >> Dockerfile.release
+            - echo 'CMD [ "rails", "db:migrate" ]' >> Dockerfile.release
 
-            # Finish the release tracking config:
-            - sentry-cli releases --org icalialabs new --finalize -p artanis artanis-${GIT_SHORT_SHA}
+            # Push the images to staging:
+            - heroku container:push --recursive --app vov-fastboot-demo-backend
 
-        - name: Candor
+            # Release the images to staging:
+            - heroku container:release web release --app vov-fastboot-demo-backend
+        
+        - name: Frontend
           commands:
-            - sentry-cli releases --org icalialabs new -p candor candor-${GIT_SHORT_SHA}
-            - docker-compose --file candor/swarm-compose.yml config > candor.yml
-            - DOCKER_HOST="localhost:2374" docker stack deploy --with-registry-auth --compose-file candor.yml candor
-            - sentry-cli releases --org icalialabs new --finalize -p candor candor-${GIT_SHORT_SHA}
+            - export RELEASE_IMAGE_TAG=vovimayhem/ember-fastboot-demo-frontend:${GIT_SHORT_SHA}
 
-        - name: Cthulhu
-          commands:
-            - sentry-cli releases --org icalialabs new -p cthulhu cthulhu-${GIT_SHORT_SHA}
-            - docker-compose --file cthulhu/stack.yml config > cthulhu.yml
-            - DOCKER_HOST="localhost:2374" docker stack deploy --with-registry-auth --compose-file cthulhu.yml cthulhu
-            - sentry-cli releases --org icalialabs new --finalize -p cthulhu cthulhu-${GIT_SHORT_SHA}
+            - docker pull ${RELEASE_IMAGE_TAG}
 
-        - name: Foresight
-          commands:
-            - docker-compose --file web-ui/stack.yml config > foresight.yml
-            - DOCKER_HOST="localhost:2374" docker stack deploy --with-registry-auth --compose-file foresight.yml foresight
+            - mkdir -p inventory && cd inventory
+            
+            # Generate the 'web' Dockerfile:
+            - echo "FROM ${RELEASE_IMAGE_TAG}" >> Dockerfile.web
+
+            # Push the images to staging:
+            - heroku container:push --recursive --app vovimayhem-ember-fastboot-demo
+
+            # Release the images to staging:
+            - heroku container:release web --app vovimayhem-ember-fastboot-demo
